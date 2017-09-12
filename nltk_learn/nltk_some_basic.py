@@ -3,9 +3,17 @@
 #import nltk
 # nltk.download()
 from nltk.tokenize import sent_tokenize, word_tokenize, PunktSentenceTokenizer
-from nltk.corpus import stopwords, state_union, gutenberg, wordnet
+from nltk.corpus import stopwords, state_union, gutenberg, wordnet, movie_reviews
 from nltk.stem import PorterStemmer, WordNetLemmatizer
-from nltk import pos_tag, RegexpParser, ne_chunk
+from nltk import pos_tag, RegexpParser, ne_chunk, FreqDist, NaiveBayesClassifier
+from nltk.classify import accuracy, ClassifierI
+from nltk.classify.scikitlearn import SklearnClassifier
+from sklearn.naive_bayes import GaussianNB, BernoulliNB, MultinomialNB
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.svm import SVC, LinearSVC, NuSVC
+from statistics import mode
+import random
+import pickle
 
 def tokenize():
     # tokenizing - word tokenizer: seperate by word -sentence tokenizer: seperate by sentence -lexicon: words and meaning -corpora: body of text
@@ -172,6 +180,128 @@ def wordnet_test():
     #measure meaning similarity
     print("the meaning similarity between {} and {} is {:.2f}".format(w1, w4, w1.wup_similarity(w4)))
 
+def find_features(doc, word_features):
+    words = set(doc)
+    features = dict()
+    for w in word_features:
+        features[w] = (w in words)
+
+    return features
+
+def text_classify():
+    #test against documents
+    documents = [(list(movie_reviews.words(fileid)), category) for category in movie_reviews.categories() for fileid in movie_reviews.fileids(category)]
+    #print(documents[0])
+    random.shuffle(documents)
+
+    #find most popular words in pos and neg categories
+    all_words = [w.lower() for w in movie_reviews.words()]
+    #print(all_words)
+
+    stop_words = set(stopwords.words("english"))
+    all_words = list(filter(lambda w: w not in stop_words, all_words))
+    
+    #statis of words 
+    all_words = FreqDist(all_words)
+    #print(all_words.most_common(10))
+    #print(all_words['stupid'])
+
+    #print(len(all_words))
+
+    word_features = list(all_words.keys())[:4000]
+
+    features_sets = list((find_features(rev, word_features), cat) for rev, cat in documents)
+
+    # features_sets: labeled data from documents
+    cut = int(0.8 * len(features_sets))
+    training_set = features_sets[:cut]
+    testing_set = features_sets[cut:]
+
+    #posterior  = prior occurences X likelihood / evidence
+    #train
+    classifier = NaiveBayesClassifier.train(training_set)
+    print("accuracy: ", accuracy(classifier, testing_set))
+    #classifier.show_most_informative_features(3)
+
+    # save trained model as piclke obj
+    with open("NaiveBayes.pkl", "wb") as f:
+        pickle.dump(classifier, f) 
+    
+    #load training model
+    with open("NaiveBayes.pkl", "rb") as f:
+        cf = pickle.load(f)
+    print("new accuracy: ", accuracy(cf, testing_set))
+    #cf.show_most_informative_features(3)
+
+    #using classifying method from sklearn
+    MNB_cf = SklearnClassifier(MultinomialNB())
+    MNB_cf.train(training_set)
+    print("MultinomialNB accuracy: ", accuracy(MNB_cf, testing_set))
+
+    # GNB_cf = SklearnClassifier(GaussianNB())
+    # GNB_cf.train(training_set)
+    # print("GaussianNB accuracy: ", accuracy(GNB_cf, testing_set))
+
+    BNB_cf = SklearnClassifier(BernoulliNB())
+    BNB_cf.train(training_set)
+    print("BernoulliNB accuracy: ", accuracy(BNB_cf, testing_set))
+
+# LogisticRegression, SGDClassifier
+# SVC, LinearSVC, NuSVC
+    LR_cf = SklearnClassifier(LogisticRegression())
+    LR_cf.train(training_set)
+    print("LogisticRegression accuracy: ", accuracy(LR_cf, testing_set))
+
+    SGDClassifier_cf = SklearnClassifier(SGDClassifier())
+    SGDClassifier_cf.train(training_set)
+    print("SGDClassifier accuracy: ", accuracy(SGDClassifier_cf, testing_set))
+
+    SVC_cf = SklearnClassifier(SVC())
+    SVC_cf.train(training_set)
+    print("SVC accuracy: ", accuracy(SVC_cf, testing_set))
+
+    LinearSVC_cf = SklearnClassifier(LinearSVC())
+    LinearSVC_cf.train(training_set)
+    print("LinearSVC accuracy: ", accuracy(LinearSVC_cf, testing_set))
+
+    NuSVC_cf = SklearnClassifier(NuSVC())
+    NuSVC_cf.train(training_set)
+    print("NuSVC accuracy: ", accuracy(NuSVC_cf, testing_set))
+
+    vote_cf = VoteClassifier(classifier, MNB_cf, BNB_cf, LR_cf, SGDClassifier_cf, SVC_cf, LinearSVC_cf, LinearSVC_cf, NuSVC_cf)
+    print("voted classifier accuracy: ", accuracy(vote_cf, testing_set))
+
+    #some example one single records
+    print("Classification: ", vote_cf.classify(testing_set[1][0]), "confidence: ", vote_cf.confidence(testing_set[1][0]))
+    print("Classification: ", vote_cf.classify(testing_set[2][0]), "confidence: ", vote_cf.confidence(testing_set[2][0]))
+    print("Classification: ", vote_cf.classify(testing_set[3][0]), "confidence: ", vote_cf.confidence(testing_set[3][0]))
+    print("Classification: ", vote_cf.classify(testing_set[5][0]), "confidence: ", vote_cf.confidence(testing_set[5][0]))
+    print("Classification: ", vote_cf.classify(testing_set[8][0]), "confidence: ", vote_cf.confidence(testing_set[8][0]))
+
+    # for i in range(len(testing_set)):
+    #     if vote_cf.confidence(testing_set[i][0]) != 1:
+    #         print("Classification: ", vote_cf.classify(testing_set[i][0]), "confidence: ", vote_cf.confidence(testing_set[i][0]))
+
+# create vote classifier class
+class VoteClassifier(ClassifierI):
+    def __init__(self, *classifiers):
+        self.classifiers = classifiers
+
+    def classify(self, features):
+        votes = []
+        for classifier in self.classifiers:
+            v = classifier.classify(features)
+            votes.append(v)
+        return mode(votes)
+
+    def confidence(self, features):
+        votes = []
+        for classifier in self.classifiers:
+            v = classifier.classify(features)
+            votes.append(v)
+        choice_vote = votes.count(mode(votes))
+        return choice_vote / len(votes)
+
 def main():
     # tokenize()
     
@@ -187,8 +317,12 @@ def main():
     #         name_endentity_chunk(each)
 
     #lemmatizer()
+    
     #corpus_test()
-    wordnet_test()
+    
+    #wordnet_test()
+
+    text_classify()
 
 if __name__ == '__main__':
     main()
