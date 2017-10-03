@@ -60,7 +60,8 @@ create_dataframe <- function(df, mySeed){
 #}
 
 #train control parameter
-trctrl <- trainControl(method = "cv", number=3)
+#cross validation 5-folds
+trctrl <- trainControl(method = "cv", number=5)
 
 #knn
 knn_model <- function(data_train){
@@ -171,6 +172,8 @@ main <- function(){
   #calc results avg and sd
   avg <- c()
   msd <- c()
+  avg_recall <- c()
+  avg_percision <- c()
   for (i in 1:4){
     temp <- c()
     temp1 <- c()
