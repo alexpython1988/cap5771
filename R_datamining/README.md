@@ -1,0 +1,1 @@
+# this section contains all the scripts and data for CIS6930 Intro to data mining course

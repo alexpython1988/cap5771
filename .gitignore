@@ -1,3 +1,7 @@
 labs/.ipynb_checkpoints/
 *.pkl
 *.pyc
+*.RData
+*.Rhistory
+*.csv
+raw_proj1.R
