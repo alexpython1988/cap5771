@@ -1,21 +1,32 @@
 #change working directory
-setwd("C:\\Users\\xiyang\\Desktop\\cap5771\\R_datamining")
+#setwd("C:\\Users\\xiyang\\Desktop\\cap5771\\R_datamining")
 
 #install and import all the required packages
-install.packages("RWeka", dependencies = TRUE)
-install.packages("e1071", dependencies = TRUE)
-install.packages("caret", dependencies = TRUE)
-install.packages("dplyr", dependencies = TRUE)
-install.packages("class", dependencies = TRUE)
-install.packages("data", dependencies = TRUE)
-install.packages("klaR", dependencies = TRUE)
+if(!require(RWeka)) install.packages("RWeka", dependencies = TRUE)
+if(!require(e1071)) install.packages("e1071", dependencies = TRUE)
+if(!require(devtools)) install.packages("devtools", dependencies = TRUE)
+library(devtools)
+if(!require(caret)) devtools::install_github('topepo/caret/pkg/caret') #install.packages("caret", dependencies = TRUE)
+#if(!require(caret)) install.packages("caret", dependencies = TRUE)
+if(!require(dplyr)) install.packages("dplyr", dependencies = TRUE)
+if(!require(class)) install.packages("class", dependencies = TRUE)
+if(!require(data)) install.packages("data", dependencies = TRUE)
+if(!require(klaR)) install.packages("klaR", dependencies = TRUE)
+if(!require(foreach)) install.packages("foreach")
+if(!require(doParallel)) install.packages("doParallel")
+library(foreach)
+library(doParallel)
 library(data.table)
 library(RWeka)
 library(e1071)
 library(caret)
 library(klaR)
-require(class)
-require(dplyr)
+library(class)
+library(dplyr)
+
+#intend to using multiprocessing 
+workers <- makeCluster(4)
+registerDoParallel(workers)
 
 #read csv file into the memory
 input_data <- function(csv_file){
@@ -84,7 +95,9 @@ RIP_model <- function(data_train){
 
 #svm
 svm_model <- function(data_train){
-  fit <- train(data_train[,c(1,2,3)], data_train[,4], method="svmRadial",tuneLength = 10,trControl=trctrl, metric="Accuracy")
+  fit <- svm(data_train[,c(1,2,3)], data_train[,4], scale=TRUE)
+  #fit <- train(data_train[,c(1,2,3)], data_train[,4], method="svmRadial",tuneLength = 10, preProcess=c("center", "scale"), trControl=trctrl, metric="Accuracy")
+  return(fit)
 }
 
 myPrediction <- function(fit, data_test){
@@ -139,7 +152,7 @@ main <- function(){
   recalls <- list(c(), c(), c(), c())
   percisions <- list(c(), c(), c(), c())  
   #run exp 5 times
-  for (i in 1:5){
+  for (i in 1:5) {
     train_and_test <- create_dataframe(df, i*1000)
     train_set <- train_and_test[[1]]
     test_set <- train_and_test[[2]]
@@ -198,6 +211,10 @@ main <- function(){
   }
   
   #present the results
+  print("=========================================================================")
+  print("Classification Results")
+  print("=========================================================================")
+  
   for(i in 1:4){
     umethod <- "KNN"
     
@@ -213,8 +230,9 @@ main <- function(){
       umethod <- "SVM"
     }
     
-    print(sprintf("method name: %s; averaged accuracy: %.2f; accuracy standard deviation: %.3f", umethod, avg[i], msd[i]))
-    print(sprintf("averaged recall: %.3f; averaged percision: %.3f; averaged f-score: %.3f", avg_recall[i], avg_percision[i], get_fscore(avg_recall[i], avg_percision[i])))
+    print(sprintf("method name: %s;  averaged accuracy: %.2f;  accuracy standard deviation: %.3f", umethod, avg[i], msd[i]))
+	  print(sprintf("averaged recall: %.3f;  averaged percision: %.3f;  averaged f-score: %.3f", avg_recall[i], avg_percision[i], get_fscore(avg_recall[i], avg_percision[i])))
+	  print("=========================================================================")
   }
 }
 
@@ -223,9 +241,8 @@ main()
 
 #detach all the packages
 detach("package:RWeka", unload = TRUE)
-detach("package:dplyr", unload = TRUE)
 detach("package:e1071", unload = TRUE)
 detach("package:caret", unload = TRUE)
 detach("package:klaR", unload = TRUE)
-detach("package:class", unload = TRUE)
-detach("package:data", unload = TRUE)
+detach("package:doParallel", unload = TRUE)
+detach("package:foreach", unload = TRUE)
