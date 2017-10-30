@@ -6,3 +6,4 @@ proj/.ipynb_checkpoints/
 *.Rhistory
 raw_proj1.R
 *.txt
+/labs/data/
