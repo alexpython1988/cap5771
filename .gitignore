@@ -7,4 +7,12 @@ proj/.ipynb_checkpoints/
 raw_proj1.R
 *.txt
 *.csv
-/labs/data/
+labs/data/
+.vscode/
+CIS6930-datamining/finalproj/.idea/
+CIS6930-datamining/finalproj/.vscode/
+proj/data/
+proj/.idea/
+proj/project/
+proj/target/
+
