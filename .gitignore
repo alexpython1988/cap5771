@@ -15,4 +15,11 @@ proj/data/
 proj/.idea/
 proj/project/
 proj/target/
+proj/Economy/data/
+proj/Economy/project/
+proj/Economy/.idea/
+proj/Economy/target/
+proj/Economy/spark-warehouse/
+
+
 
