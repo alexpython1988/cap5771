@@ -173,13 +173,17 @@ class CategoricalNB():
     def predict(self, testing_data):
         labels = []
         testing_data = np.asarray(testing_data)
+        #print(testing_data)
         smoothed_lps = []
 
         if len(testing_data.shape) == 1 or testing_data.shape[1] == 1:
             testing_data = testing_data.reshape(1, len(testing_data))
 
+        #print(testing_data)
+
         for i, vec in enumerate(testing_data):
             smoothed_lp = {tag: 0.0 for tag in self.tag_id}
+            #print(smoothed_lp)
             for val in vec:
                 for tag in self.tag_id:
                     sl_prob = self.laplacian(val, tag)
@@ -224,12 +228,10 @@ def train_chain(train_set, test_set):
     model = MyGaussianNB()
     model.train(gd, ld)
     l, p = model.predict(gdt)
-    #print(p)
 
     cmodel = CategoricalNB()
     cmodel.train(cd, ld)
     l, p1 = cmodel.predict(cdt)
-    #print(p1)
 
     final = []
     labels = []

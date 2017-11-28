@@ -1,5 +1,6 @@
 import java.io.File
 
+import Unemployment.{directory, sc}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.Encoders
 import org.apache.spark.sql.SparkSession
@@ -14,6 +15,7 @@ import swiftvis2.plotting.renderer.FXRenderer
 case class LACData(id: String, year: Int, period: String, value: Double)
 case class ZipData(zipCode: String, lat: Double, lon: Double, city: String, state: String, county: String)
 case class ZipCountyData(lat: Double, lon: Double, county: String, state: String)
+case class IncomeData(geoID:String, geoName:String, code: Int, pi2006: Double, pi2009: Double, pi2015: Double) //code == 3 -> personal income code == 2 -> population
 
 object CountyRateVis extends JFXApp {
   val conf = new SparkConf().setAppName("BLST").setMaster("local[*]")
@@ -66,7 +68,19 @@ object CountyRateVis extends JFXApp {
   val plot = Plot.scatterPlot(lon, lat, "", "longtitude", "lattitude", 3, values.map(cg))
 
   FXRenderer(plot, 800, 600)
-    FXRenderer.saveToImage(plot, 800, 600, new File("US_Unemployment_Rate_county.png"))
+  FXRenderer.saveToImage(plot, 800, 600, new File("US_Unemployment_Rate_county.png"))
+
+  //county based personal income data
+  val incomeData = ss.read.textFile(directory + "CA1_1969_2015__ALL_AREAS.csv").filter(!_.contains("GeoFIPS")).flatMap{
+    line =>
+      val v = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1).map(_.trim).map(_.replaceAll("\"", ""))
+      if(v.length < 5 ||v(0).toInt % 1000 == 0 || v(4).toInt == 1 || v(4).toInt == 2){
+        Seq.empty
+      }else
+        Seq(IncomeData(v(0), v(1), v(4).toInt, v(44).toDouble, v(47).toDouble, v(53).toDouble))
+  }
+
+  incomeData.show()
 
   ss.stop()
 }

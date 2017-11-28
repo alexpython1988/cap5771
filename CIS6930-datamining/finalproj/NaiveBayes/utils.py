@@ -1,4 +1,5 @@
 '''functions used for calculation in naive bayes'''
+import mmap
 
 def update_mean(u1, u2, n1, n2):
     return (u1 * n1 + u2 * n2) / (n1 + n2)
@@ -20,3 +21,17 @@ def evaluation(pred_label, true_label):
             matched += 1
 
     return "{:.3f}".format(1.0 * matched / n)
+
+def categorical2level(data_set):
+    pass
+
+def count_file_lines(file):
+    f = open(file, "r+")
+    buf = mmap.mmap(f.fileno(), 0)
+    lines = 0
+    readline = buf.readline
+    while readline():
+        lines += 1
+    f.close()
+    return lines
+

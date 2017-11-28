@@ -1,9 +1,7 @@
 import java.io.File
-
 import org.apache.spark.{SparkConf, SparkContext}
 import swiftvis2.plotting._
 import swiftvis2.plotting.renderer.FXRenderer
-
 import scalafx.application.JFXApp
 
 case class Area(code: String, text: String)
@@ -13,14 +11,14 @@ case class GeoData(zipCode: String, lat: Double, lon: Double, city: String, stat
 case class GeoCityData(lat: Double, lon: Double, city: String, state: String)
 case class Temp(x: String, y:String)
 case class GDPData(geoID:String, geoName: String, industryID: Int, gdp2006: Double, gdp2009: Double, gdp2015: Double) //only use ID==1 ->all industry
-case class IncomeData(geoID:String, geoName:String, code: Int, pi2006: Double, pi2009: Double, pi2015: Double) //code == 3 -> personal income code == 2 -> population
+case class IncomePerPersonData(geoID:String, geoName:String, code: Int, po2008: Double, po2009: Double, po2015: Double) //code == 3 -> personal income code == 2 -> population
 
 object Unemployment extends JFXApp{
   val directory = "data/"
 
   //create spark context
   //using local machine all cores, if on spark cluster, change the setMaster
-  val conf = new SparkConf().setAppName("PreprocessUnemploymentRate").setMaster("local[2]") //TODO change to *
+  val conf = new SparkConf().setAppName("PreprocessUnemploymentRate").setMaster("local[*]")
   val sc = new SparkContext(conf)
   sc.setLogLevel("WARN")
 
@@ -112,7 +110,7 @@ object Unemployment extends JFXApp{
       else
         Seq(GeoData(v(0), v(1).toDouble, v(2).toDouble, v(3), v(4), v(5)))
     }
-  }
+  }.cache()
   //geoData.foreach(println)
 
   val cityLoc = geoData.flatMap{ x =>
@@ -170,7 +168,7 @@ object Unemployment extends JFXApp{
 //    case (c,(r,(lat, lon))) =>
 //      (r, lat, lon)
 //  }
-//
+
 ////  println(cityLocRate2006.count())
 
 //  val lat1 = cityLocRate2006.map(_._2).collect()
@@ -226,22 +224,132 @@ object Unemployment extends JFXApp{
       Seq.empty
     else
       Seq(GDPData(v(0), v(1), v(5).toInt, v(13).toDouble, v(16).toDouble, v(22).toDouble))
+  }.map{
+    gdp =>
+      gdp.geoID -> (gdp.geoName, gdp.gdp2009, gdp.gdp2015)
   }
-
-  //.take(10) foreach println
-
+//  .take(10) foreach println
 
   //read in personal income data
-  val incomeData = sc.textFile(directory + "CA1_1969_2015__ALL_AREAS.csv").filter(!_.contains("GeoFIPS")).flatMap{
-    line =>
-      val v = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1).map(_.trim).map(_.replaceAll("\"", ""))
-      Seq()
+  val incomeData = sc.textFile(directory + "RPI_2008_2015_MSA.csv")
+    .filter{x => !x.contains("GeoFIPS") && !x.contains("(NA)")}
+    .flatMap{
+      line =>
+        val v = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1).map(_.trim).map(_.replaceAll("\"", ""))
+        if(v.length < 5 || v(0).toInt == 999 || v(0).toInt == 0 || v(4).toInt == 1 ){
+          Seq.empty
+        }else
+          Seq(IncomePerPersonData(v(0), v(1), v(4).toInt, v(7).toDouble, v(8).toDouble, v(14).toDouble))
+    }.map{
+      icd =>
+        icd.geoID -> (icd.geoName, icd.po2009, icd.po2015)
+    }
+//  .take(10) foreach println
+
+  //process gdp and income data; join two data together based on city since the data share the same location id
+  //only get the data for 2009 and 2015 since 2006 data is not available
+  val gdpIncomeData = incomeData.join(gdpData).map{
+    case (k, ((c1, pic2009, pic2015), (c2, gdp2009, gdp2015))) =>
+      val c3 = c1.split("\\(").map(_.trim)
+      c3(0) -> (pic2009, pic2015, gdp2009, gdp2015)
+  }.map{ each =>
+    val v = List[(Double, Double, Double, Double)](each._2).toArray
+    if(each._1.contains("-")){
+      val dd = each._1.split(",")
+      val c = dd(0).split("-")
+      var l = List[String](c(0) + "," + dd(1))
+      for(j <- 1 until c.length){
+        val t = c(j) + "," + dd(1)
+        l = t :: l
+      }
+      l.toArray -> v
+    }else{
+      List[String](each._1).toArray -> v
+    }
+  }.map{ x=>
+    x._1.flatMap(c => x._2.map(c->)).toMap
+  }.flatMap(_.toSeq).map{
+    case (k, (a,b,c,d))=>
+      val temp = k.split(",").map(_.trim)
+      (temp(0), temp(1)) -> (a,b,c,d)
+  } //(Beaufort,SC,(41640.0,45536.0,7541.0,8646.0)) (pi2009, pi2015, gdp2009, gdp2015)
+//      .take(10) foreach println
+  /*
+  ***************************************************************************************
+  * process data for plotting personal income and gdp vs location
+  */
+
+  val cityLoc1 = geoData.flatMap{ x =>
+    Seq(GeoCityData(x.lat, x.lon, x.city, x.state))
+  }.map{
+    gcd =>
+      (gcd.city, gcd.state) -> (gcd.lat, gcd.lon)
+  }.aggregateByKey((0.0, 0.0) -> 0)({
+    case (((la, lo), c), (vla,vlo)) =>
+      ((la+vla, lo+vlo), c+1)
+  },{
+    case (((la1, lo1), c1),((la2, lo2), c2)) =>
+      ((la1+la2, lo1+lo2), c1+c2)
+  }).mapValues{
+    case ((las, los), c) => (las/c, los/c)
   }
+//    .take(10) foreach println
 
-  //.take(10) foreach println
-  //join all data and output
+  val dgpIncomeYearLocData =  gdpIncomeData.join(cityLoc1).map{
+    case ((c,s), ((pi2009, pi2015, gdp2009, gdp2015),(lat, lon))) =>
+      (c, s) -> (pi2009, pi2015, gdp2009, gdp2015, lat, lon)
+  }.cache() //(city, state, pi2009, pi2015, gdp2009, gdp2015, lat, lo )
+//      .take(10) foreach println //((Flagstaff,AZ),(34414.0,38605.0,4643.0,5573.0,35.687109400000004,-111.8158974))
+
+  //TODO uncomment after finish all the code
+  /*
+  *****************************************************************************************************************
+    plotting data to represent changes on income and gdp in 2009 and 2015 (total 4 figures)
+
+   */
+//  val lat2 = dgpIncomeYearLocData.map(_._2._5).collect()
+//  val lon2 = dgpIncomeYearLocData.map(_._2._6).collect()
+//  //TODO tune RGB param to get better distinguish representation curr_best: 1000, 12000, 500000
+//  val cgGDP = ColorGradient(1000.0 -> BlueARGB, 12000.0 -> GreenARGB, 500000.0 -> RedARGB)
+//
+//  //2009 gdp
+//  val gdp2009 = dgpIncomeYearLocData.map(_._2._3).collect()
+////  println(gdp2009.max) //741630.0
+////  println(gdp2009.min) //1876.0
+//  val plot3 = Plot.scatterPlot(lon2, lat2, "", "longtitude", "lattitude", 10, gdp2009.map(cgGDP))
+//  FXRenderer(plot3, 800, 600)
+//  FXRenderer.saveToImage(plot3, 800, 600, new File("US_GDP_CITY_2009.png"))
+//
+//  //2016 gdp
+//  val gdp2015 = dgpIncomeYearLocData.map(_._2._4).collect()
+//  val plot4 = Plot.scatterPlot(lon2, lat2, "", "longtitude", "lattitude", 10, gdp2015.map(cgGDP))
+//  FXRenderer(plot4, 800, 600)
+//  FXRenderer.saveToImage(plot4, 800, 600, new File("US_GDP_CITY_2015.png"))
+//
+//  //income
+//  //TODO tune param, cur_best:
+//  val cgIncome = ColorGradient(25000.0 -> BlueARGB, 37000.0 -> GreenARGB, 68000.0 -> RedARGB)
+//
+//  //2009 income
+//  val inc2009 = dgpIncomeYearLocData.map(_._2._1).collect()
+////  println(inc2009.max) //82233
+////  println(inc2009.min) //25472
+//
+//  val plot5 = Plot.scatterPlot(lon2, lat2, "", "longtitude", "lattitude", 10, inc2009.map(cgIncome))
+//  FXRenderer(plot5, 800, 600)
+//  FXRenderer.saveToImage(plot5, 800, 600, new File("US_PERSONALINCOME_CITY_2009.png"))
+//  //2016 income
+//  val inc2015 = dgpIncomeYearLocData.map(_._2._2).collect()
+//  val plot6 = Plot.scatterPlot(lon2, lat2, "", "longtitude", "lattitude", 10, inc2015.map(cgIncome))
+//  FXRenderer(plot6, 800, 600)
+//  FXRenderer.saveToImage(plot6, 800, 600, new File("US_PERSONALINCOME_CITY_2015.png"))
+//*****************************************************************************************************************
+
+  //merge unemployment rate with GDP and income data and output
 
 
+
+  //terminate spark
   sc.stop()
   println("done")
 //  Thread.sleep(3000)
