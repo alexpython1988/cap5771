@@ -1,7 +1,9 @@
 import java.io.File
+import org.apache.spark.sql._
 import org.apache.spark.{SparkConf, SparkContext}
 import swiftvis2.plotting._
 import swiftvis2.plotting.renderer.FXRenderer
+
 import scalafx.application.JFXApp
 
 case class Area(code: String, text: String)
@@ -40,7 +42,7 @@ object Unemployment extends JFXApp{
       val v = line.split("\t").map(_.trim)
       Seq(Series(v(0), v(2), v(3), v(6)))
     }
-  }.filter(_.measureCode == "03")
+  }.filter(_.measureCode == "03").cache()
   //seriesData.take(5) foreach println
 
   //read in city unemployment rate data from la_data_Metro.txt
@@ -346,11 +348,43 @@ object Unemployment extends JFXApp{
 //*****************************************************************************************************************
 
   //merge unemployment rate with GDP and income data and output
+  val seriesMap1 = seriesData.map{
+    x =>
+      x.sid -> x.title
+  }
+
+  val merged060915 = uRYA2006.join(uRYA2009).join(uRYA2015).map{
+    case (k, ((d1, d2), d3)) =>
+      k -> (d2, d1, d3) //2006, 2009, 2015
+  }
+
+  val geoUnemployment = merged060915.join(seriesMap1).map{
+    case (k,((d06, d09, d15), t)) =>
+      (t, d06, d09, d15)
+  }
+
+  val ss = SparkSession.builder().config(conf).getOrCreate()
+  import ss.implicits._
+
+  val employmentDF = geoUnemployment.toDF("info", "rate06", "rate09", "rate15")
+  val gdpIncomeLocDF = dgpIncomeYearLocData.map{
+    case ((k1, k2), (d1,d2,d3,d4,d5,d6)) =>
+      (k1,k2,d1,d2,d3,d4,d5,d6)
+  }.toDF("city", "state", "pi2009", "pi2015", "gdp2009", "gdp2015", "lat", "lon")
+
+  val dataForML = employmentDF.joinWith(gdpIncomeLocDF, 'info.contains('state) && 'info.contains('city)).rdd.map{
+    case (Row(t:String, d1: Double, d2:Double, d3:Double), Row(k1:String, k2:String, dd1:Double, dd2:Double, dd3:Double, dd4:Double, dd5:Double, dd6:Double)) =>
+      (k1,k2,d1,d2,d3,dd1,dd2,dd3,dd4,dd5,dd6)
+  }.toDF("city", "state", "rate06", "rate09", "rate15", "pi2009", "pi2015", "gdp2009", "gdp2015", "lat", "lon")
+
+  //TODO output dataForML
 
 
+  println(dataForML.count()) //466
 
   //terminate spark
   sc.stop()
+  ss.stop()
   println("done")
 //  Thread.sleep(3000)
 //  System.exit(0)

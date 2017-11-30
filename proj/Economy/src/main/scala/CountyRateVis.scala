@@ -44,7 +44,7 @@ object CountyRateVis extends JFXApp {
 
   //join vs joinWith:  joinWith is a type-preserving join (return tuples instread of dataframe)
   val joinedOne = countyData.joinWith(seriesData, 'id === 'sid).cache()
-  //  joinedOne.show()
+    joinedOne.show(10)
 //  println(joinedOne.first())
 
   val zipData = ss.read.schema(Encoders.product[ZipData].schema).option("header", true).csv(directory + "zip_codes_states.csv").as[ZipData].filter('lat.isNotNull).cache()
@@ -55,7 +55,7 @@ object CountyRateVis extends JFXApp {
       ZipCountyData(lat, lon, county, state)
   }
 
-  //  countyLoc.show()
+    countyLoc.show(10)
   val fullJoined = joinedOne.joinWith(countyLoc, '_2("title").contains('county) && '_2("title").contains('state))
   println(fullJoined.first())
   println(fullJoined.count())
