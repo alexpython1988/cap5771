@@ -183,9 +183,8 @@ def on_large_sample(data_file):
                 sets = []
 
                 rounds += 1
-                predict_acc_res_cv.append((rounds, res_cv))
-                predict_acc_res_g.append((rounds, res_gl))
-                indicator = False
+                # predict_acc_res_cv.append((rounds, res_cv))
+                # predict_acc_res_g.append((rounds, res_gl))
 
     matched1 = reduce(lambda x, y: x + y,
                       map(lambda x: 1 if x[0] == x[1] else 0,

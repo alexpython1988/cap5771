@@ -20,7 +20,7 @@ def evaluation(pred_label, true_label):
         if each[0] == each[1]:
             matched += 1
 
-    return "{:.3f}".format(1.0 * matched / n)
+    return 1.0 * matched / n
 
 def categorical2level(data_set):
     pass

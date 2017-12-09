@@ -1,4 +1,4 @@
-1. extract the data 
+1. extract the code
 ```sh
 tar -xvf project_naive_bayes.tar.gz
 ```
@@ -13,4 +13,4 @@ python data_analysis.py
 All the result will be printed in terminal
 4. two figures will be create to show batch-to-bacth train result against train circles
 
-** note: make sure the two data sets we used for this project are in the same directory as the .py files **
+**note: make sure the two data sets we used for this project are in the same directory as the .py files**

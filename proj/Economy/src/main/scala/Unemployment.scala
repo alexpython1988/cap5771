@@ -1,4 +1,13 @@
 import java.io.File
+
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.classification.{LogisticRegression, MultilayerPerceptronClassifier, OneVsRest, RandomForestClassifier}
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+import org.apache.spark.sql.functions.rand
+import org.apache.spark.ml.feature.{IndexToString, LabeledPoint, StringIndexer, VectorIndexer}
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.regression.LinearRegression
+import org.apache.spark.mllib.evaluation.MulticlassMetrics
 import org.apache.spark.sql._
 import org.apache.spark.{SparkConf, SparkContext}
 import swiftvis2.plotting._
@@ -12,8 +21,8 @@ case class UnemploymentRate(id: String, year: Int, period: Int, value: Double)
 case class GeoData(zipCode: String, lat: Double, lon: Double, city: String, state: String, county: String)
 case class GeoCityData(lat: Double, lon: Double, city: String, state: String)
 case class Temp(x: String, y:String)
-case class GDPData(geoID:String, geoName: String, industryID: Int, gdp2006: Double, gdp2009: Double, gdp2015: Double) //only use ID==1 ->all industry
-case class IncomePerPersonData(geoID:String, geoName:String, code: Int, po2008: Double, po2009: Double, po2015: Double) //code == 3 -> personal income code == 2 -> population
+case class GDPData(geoID:String, geoName: String, industryID: Int, gdp2006: Double, gdp2008: Double, gdp2009: Double, gdp2014: Double, gdp2015: Double) //only use ID==1 ->all industry
+case class IncomePerPersonData(geoID:String, geoName:String, code: Int, po2008: Double, po2009: Double, po2014:Double, po2015: Double) //code == 3 -> personal income code == 2 -> population
 
 object Unemployment extends JFXApp{
   val directory = "data/"
@@ -21,7 +30,9 @@ object Unemployment extends JFXApp{
   //create spark context
   //using local machine all cores, if on spark cluster, change the setMaster
   val conf = new SparkConf().setAppName("PreprocessUnemploymentRate").setMaster("local[*]")
-  val sc = new SparkContext(conf)
+  val ss = SparkSession.builder().config(conf).getOrCreate()
+  import ss.implicits._
+  val sc = ss.sparkContext
   sc.setLogLevel("WARN")
 
   //read in Area data from la_area.txt
@@ -98,6 +109,14 @@ object Unemployment extends JFXApp{
       id -> r
   }
   val uRYA2015 = unemploymentRateYearAvg.filter(_._1._2 == 2015).map{
+    case ((id, y), r) =>
+      id -> r
+  }
+  val uRYA2014 = unemploymentRateYearAvg.filter(_._1._2 == 2014).map{
+    case ((id, y), r) =>
+      id -> r
+  }
+  val uRYA2008 = unemploymentRateYearAvg.filter(_._1._2 == 2008).map{
     case ((id, y), r) =>
       id -> r
   }
@@ -219,16 +238,16 @@ object Unemployment extends JFXApp{
   //**********************************************************************************************
 
   //read in GDP data
-  //case class GDPData(geoID:String, geoName: String, industryID: Int, d2006: Double, d2009: Double, d2015: Double)
+  //case class GDPData(geoID:String, geoName: String, industryID: Int, d2006: Double, d2009: Double, 2010, 2014 2015: Double)
   val gdpData = sc.textFile(directory + "gmpGDP.csv").filter(!_.contains("GeoFIPS")).flatMap{ line =>
     val v = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1).map(_.trim).map(_.replaceAll("\"", ""))
     if (v.length < 20 || v(5).toInt != 1)
       Seq.empty
     else
-      Seq(GDPData(v(0), v(1), v(5).toInt, v(13).toDouble, v(16).toDouble, v(22).toDouble))
+      Seq(GDPData(v(0), v(1), v(5).toInt, v(13).toDouble, v(15).toDouble, v(16).toDouble, v(21).toDouble, v(22).toDouble))
   }.map{
     gdp =>
-      gdp.geoID -> (gdp.geoName, gdp.gdp2009, gdp.gdp2015)
+      gdp.geoID -> (gdp.geoName, gdp.gdp2008, gdp.gdp2009, gdp.gdp2014, gdp.gdp2015)
   }
 //  .take(10) foreach println
 
@@ -241,21 +260,21 @@ object Unemployment extends JFXApp{
         if(v.length < 5 || v(0).toInt == 999 || v(0).toInt == 0 || v(4).toInt == 1 ){
           Seq.empty
         }else
-          Seq(IncomePerPersonData(v(0), v(1), v(4).toInt, v(7).toDouble, v(8).toDouble, v(14).toDouble))
+          Seq(IncomePerPersonData(v(0), v(1), v(4).toInt, v(7).toDouble, v(8).toDouble, v(13).toDouble, v(14).toDouble))
     }.map{
       icd =>
-        icd.geoID -> (icd.geoName, icd.po2009, icd.po2015)
+        icd.geoID -> (icd.geoName, icd.po2008, icd.po2009, icd.po2014, icd.po2015)
     }
 //  .take(10) foreach println
 
   //process gdp and income data; join two data together based on city since the data share the same location id
   //only get the data for 2009 and 2015 since 2006 data is not available
   val gdpIncomeData = incomeData.join(gdpData).map{
-    case (k, ((c1, pic2009, pic2015), (c2, gdp2009, gdp2015))) =>
+    case (k, ((c1, pic2008, pic2009, pic2014, pic2015), (c2, gdp2008, gdp2009, gdp2014, gdp2015))) =>
       val c3 = c1.split("\\(").map(_.trim)
-      c3(0) -> (pic2009, pic2015, gdp2009, gdp2015)
+      c3(0) -> (pic2008, pic2009, pic2014, pic2015, gdp2008, gdp2009, gdp2014, gdp2015)
   }.map{ each =>
-    val v = List[(Double, Double, Double, Double)](each._2).toArray
+    val v = List[(Double, Double, Double, Double, Double, Double, Double, Double)](each._2).toArray
     if(each._1.contains("-")){
       val dd = each._1.split(",")
       val c = dd(0).split("-")
@@ -271,9 +290,9 @@ object Unemployment extends JFXApp{
   }.map{ x=>
     x._1.flatMap(c => x._2.map(c->)).toMap
   }.flatMap(_.toSeq).map{
-    case (k, (a,b,c,d))=>
+    case (k, (a,b,c,d,e,f,g,h))=>
       val temp = k.split(",").map(_.trim)
-      (temp(0), temp(1)) -> (a,b,c,d)
+      (temp(0), temp(1)) -> (a,b,c,d,e,f,g,h)
   } //(Beaufort,SC,(41640.0,45536.0,7541.0,8646.0)) (pi2009, pi2015, gdp2009, gdp2015)
 //      .take(10) foreach println
   /*
@@ -298,12 +317,12 @@ object Unemployment extends JFXApp{
 //    .take(10) foreach println
 
   val dgpIncomeYearLocData =  gdpIncomeData.join(cityLoc1).map{
-    case ((c,s), ((pi2009, pi2015, gdp2009, gdp2015),(lat, lon))) =>
-      (c, s) -> (pi2009, pi2015, gdp2009, gdp2015, lat, lon)
+    case ((c,s), ((pi2008, pi2009, pi2014, pi2015, gdp2008, gdp2009, gdp2014, gdp2015),(lat, lon))) =>
+      (c, s) -> (pi2008, pi2009, pi2014, pi2015, gdp2008, gdp2009, gdp2014, gdp2015, lat, lon)
   }.cache() //(city, state, pi2009, pi2015, gdp2009, gdp2015, lat, lo )
 //      .take(10) foreach println //((Flagstaff,AZ),(34414.0,38605.0,4643.0,5573.0,35.687109400000004,-111.8158974))
 
-  //TODO uncomment after finish all the code
+  //TODO uncomment after finish all the code, need to change param index
   /*
   *****************************************************************************************************************
     plotting data to represent changes on income and gdp in 2009 and 2015 (total 4 figures)
@@ -311,10 +330,10 @@ object Unemployment extends JFXApp{
    */
 //  val lat2 = dgpIncomeYearLocData.map(_._2._5).collect()
 //  val lon2 = dgpIncomeYearLocData.map(_._2._6).collect()
-//  //TODO tune RGB param to get better distinguish representation curr_best: 1000, 12000, 500000
+////  //TODO tune RGB param to get better distinguish representation curr_best: 1000, 12000, 500000
 //  val cgGDP = ColorGradient(1000.0 -> BlueARGB, 12000.0 -> GreenARGB, 500000.0 -> RedARGB)
-//
-//  //2009 gdp
+////
+////  //2009 gdp
 //  val gdp2009 = dgpIncomeYearLocData.map(_._2._3).collect()
 ////  println(gdp2009.max) //741630.0
 ////  println(gdp2009.min) //1876.0
@@ -329,7 +348,6 @@ object Unemployment extends JFXApp{
 //  FXRenderer.saveToImage(plot4, 800, 600, new File("US_GDP_CITY_2015.png"))
 //
 //  //income
-//  //TODO tune param, cur_best:
 //  val cgIncome = ColorGradient(25000.0 -> BlueARGB, 37000.0 -> GreenARGB, 68000.0 -> RedARGB)
 //
 //  //2009 income
@@ -353,34 +371,264 @@ object Unemployment extends JFXApp{
       x.sid -> x.title
   }
 
-  val merged060915 = uRYA2006.join(uRYA2009).join(uRYA2015).map{
-    case (k, ((d1, d2), d3)) =>
-      k -> (d2, d1, d3) //2006, 2009, 2015
+  //TODO check order of data after join
+  val merged060915 = uRYA2008.join(uRYA2009).join(uRYA2014).join(uRYA2015).map{
+    case (k, (((d1, d2), d3), d4)) =>
+      k -> (d2, d1, d3, d4) //2008, 2009, 2014, 2015
   }
 
   val geoUnemployment = merged060915.join(seriesMap1).map{
-    case (k,((d06, d09, d15), t)) =>
-      (t, d06, d09, d15)
+    case (k,((d08, d09, d14, d15), t)) =>
+      (t, d08, d09, d14, d15)
   }
 
-  val ss = SparkSession.builder().config(conf).getOrCreate()
-  import ss.implicits._
-
-  val employmentDF = geoUnemployment.toDF("info", "rate06", "rate09", "rate15")
+  val employmentDF = geoUnemployment.toDF("info", "rate08", "rate09", "rate14", "rate15")
   val gdpIncomeLocDF = dgpIncomeYearLocData.map{
-    case ((k1, k2), (d1,d2,d3,d4,d5,d6)) =>
-      (k1,k2,d1,d2,d3,d4,d5,d6)
-  }.toDF("city", "state", "pi2009", "pi2015", "gdp2009", "gdp2015", "lat", "lon")
+    case ((k1, k2), (d1,d2,d3,d4,d5,d6,d7,d8,l1,l2)) =>
+      (k1,k2,d1,d2,d3,d4,d5,d6,d7,d8,l1,l2)
+  }.toDF("city", "state", "pi2008", "pi2009", "pi2014", "pi2015", "gdp2008", "gdp2009", "gdp2014", "gdp2015", "lat", "lon")
 
   val dataForML = employmentDF.joinWith(gdpIncomeLocDF, 'info.contains('state) && 'info.contains('city)).rdd.map{
-    case (Row(t:String, d1: Double, d2:Double, d3:Double), Row(k1:String, k2:String, dd1:Double, dd2:Double, dd3:Double, dd4:Double, dd5:Double, dd6:Double)) =>
-      (k1,k2,d1,d2,d3,dd1,dd2,dd3,dd4,dd5,dd6)
-  }.toDF("city", "state", "rate06", "rate09", "rate15", "pi2009", "pi2015", "gdp2009", "gdp2015", "lat", "lon")
+    case (Row(t:String, d1: Double, d2:Double, d3:Double, d4:Double), Row(k1:String, k2:String, dd1:Double, dd2:Double, dd3:Double, dd4:Double, dd5:Double, dd6:Double, dd7:Double, dd8:Double, l1:Double, l2:Double)) =>
+      (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2)
+  }.cache()
 
-  //TODO output dataForML
+//  val data2csv = dataForML.toDF("city", "state", "rate08", "rate09", "rate14", "rate15", "pi2008","pi2009", "pi2014", "pi2015", "gdp2008", "gdp2009", "gdp2014", "gdp2015", "lat", "lon")
+  //save data to csv
+//  data2csv
+//    .coalesce(1)
+//    .write.format("com.databricks.spark.csv")
+//    .option("header", "true")
+//    .save("mydata.csv")
 
+//  println(dataForML.count()) //466
+  /*
+    ML with spark ml
+    parallel training against traditional batch-to-batch train
+   */
+  //example
+//  val training = ss.read.format("libsvm")
+//    .load("example.txt")
 
-  println(dataForML.count()) //466
+  //format data
+  val predict2009Data = dataForML.map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(dd6, Vectors.dense(d2, dd2))
+  }
+
+  val predict2014Data = dataForML.map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(dd7, Vectors.dense(d3, dd3))
+  }
+
+  val predict2015Data = dataForML.map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(dd8, Vectors.dense(d4, dd4))
+  }
+
+  val predict2008Data = dataForML.map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(dd5, Vectors.dense(d1, dd1))
+  }
+
+  val regressionData = predict2009Data ++ predict2015Data ++ predict2014Data ++ predict2008Data
+
+  //linear regression
+  println("******* Linear Regression ***********")
+  val lr = new LinearRegression()
+    .setMaxIter(100)
+    .setRegParam(0.3)
+    .setElasticNetParam(0.8)
+
+  val linearModel = lr.fit(regressionData.toDF("label", "features"))
+  println(s"Coefficients: ${linearModel.coefficients} Intercept: ${linearModel.intercept}")
+  val trainingSummary = linearModel.summary
+  println(s"objectiveHistory: [${trainingSummary.objectiveHistory.mkString(",")}]")
+  println(s"RMSE: ${trainingSummary.rootMeanSquaredError}")
+  println(s"r2: ${trainingSummary.r2}")
+  println("************************************")
+  //plot data as 2D grid
+//  val X = regressionData.map(_.features(0)).collect
+//  val Y = regressionData.map(_.features(1)).collect
+//  val plot7 = Plot.scatterPlot(X, Y, "", "income", "GDP", 3, BlackARGB)
+////  FXRenderer(plot7, 800, 600)
+//  FXRenderer.saveToImage(plot7, 800, 600, new File("GDP_Income_2D.png"))
+
+  //prepare dataset for classification
+  //map state to integer representation
+  val states4Key = dataForML.map{
+      case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+        k2 -> 1
+  }.reduceByKey(_ + _).filter(_._2 > 2).keys.collect
+
+  val cc = sc.parallelize((1 to states4Key.length).toArray.toSeq).collect
+//  println(cc.count())
+//  println(states4Key.count())
+
+  val states2Num = states4Key.zip(cc).toMap
+
+  val classificationDataSet2008 = dataForML.filter(x => states2Num.contains(x._2)).map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(states2Num.get(k2).get.toDouble, Vectors.dense(d1, dd1, dd5))
+  }
+
+  val classificationDataSet2009 = dataForML.filter(x => states2Num.contains(x._2)).map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(states2Num.get(k2).get.toDouble, Vectors.dense(d2, dd2, dd6))
+  }
+
+  val classificationDataSet2014 = dataForML.filter(x => states2Num.contains(x._2)).map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(states2Num.get(k2).get.toDouble, Vectors.dense(d3, dd3, dd7))
+  }
+
+  val classificationDataSet2015 = dataForML.filter(x => states2Num.contains(x._2)).map{
+    case (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2) =>
+      LabeledPoint(states2Num.get(k2).get.toDouble, Vectors.dense(d4, dd4, dd8))
+  }
+
+  val classificationDataSet = classificationDataSet2008 ++ classificationDataSet2009 ++ classificationDataSet2014 ++ classificationDataSet2015
+  val classificationDF = classificationDataSet.toDF("label", "features").orderBy(rand()).cache()
+
+  val Array(ts, tt) = classificationDF.randomSplit(Array(0.8, 0.2))
+  val trainset = ts.toDF("label", "features").cache()
+  val testset = tt.toDF("label", "features").cache()
+
+  val labelIndexer = new StringIndexer()
+    .setInputCol("label")
+    .setOutputCol("indexedLabel")
+    .fit(classificationDF)
+
+  val featureIndexer = new VectorIndexer()
+    .setInputCol("features")
+    .setOutputCol("indexedFeatures")
+    .setMaxCategories(4)
+    .fit(classificationDF)
+
+  val labelConverter = new IndexToString()
+    .setInputCol("prediction")
+    .setOutputCol("predictedLabel")
+    .setLabels(labelIndexer.labels)
+  /*
+  logistic regression
+  using 2009, 2014, 2015, 2008 data to predict state
+ */
+  //TODO each classifier part can be extracted as a function and passing the classifier as input parameters with p, r, f as returned values
+  println("******* Logistic Regression ***********")
+  val logr = new LogisticRegression()
+    .setMaxIter(100)
+    .setRegParam(0.3)
+    .setElasticNetParam(0.8)
+    .setThreshold(0.5)
+
+  val pipelineLR = new Pipeline()
+    .setStages(Array(labelIndexer, featureIndexer, logr, labelConverter))
+
+  val modelLR = pipelineLR.fit(trainset)
+
+  val logrPredictions = modelLR.transform(testset)
+
+  val resForMetricsLR = logrPredictions.select("predictedLabel", "label").rdd.map{
+    case (Row(p, l)) =>
+      (p.toString.toDouble, l.toString.toDouble)
+  }
+
+  val evaluatorLR = new MulticlassClassificationEvaluator()
+    .setLabelCol("indexedLabel")
+    .setPredictionCol("prediction")
+    .setMetricName("accuracy")
+  val accuracyLR = evaluatorLR.evaluate(logrPredictions)
+  println("Test accuracy = " + accuracyLR)
+
+  val metricsLR = new MulticlassMetrics(resForMetricsLR)
+//  println("confusion matrix:")
+//  println(metricsLR.confusionMatrix)
+  val precisionLR = metricsLR.weightedPrecision
+  val recallLR = metricsLR.weightedRecall
+  val f1ScoreLR = metricsLR.weightedFMeasure
+  println("Summary Statistics")
+  println(s"Precision = $precisionLR")
+  println(s"Recall = $recallLR")
+  println(s"F1 Score = $f1ScoreLR")
+
+  println("**************************************")
+
+  /*
+  random forest
+   */
+  println("***********random forest*******************")
+
+  val rf = new RandomForestClassifier()
+    .setLabelCol("indexedLabel")
+    .setFeaturesCol("indexedFeatures")
+    .setNumTrees(10)
+
+  val pipeline = new Pipeline()
+    .setStages(Array(labelIndexer, featureIndexer, rf, labelConverter))
+
+  val model = pipeline.fit(trainset)
+
+  val predictions = model.transform(testset)
+
+  predictions.select("predictedLabel", "label", "features").show(5)
+
+  val evaluator = new MulticlassClassificationEvaluator()
+    .setLabelCol("indexedLabel")
+    .setPredictionCol("prediction")
+    .setMetricName("accuracy")
+  val accuracy = evaluator.evaluate(predictions)
+  println("Test accuracy = " + accuracy)
+
+  val resForMetricsRF = predictions.select("predictedLabel", "label").rdd.map{
+    case (Row(p, l)) =>
+      (p.toString.toDouble, l.toString.toDouble)
+  }
+
+  val metricsRF = new MulticlassMetrics(resForMetricsRF)
+//  println("confusion matrix:")
+//  println(metricsRF.confusionMatrix)
+  val precisionRF = metricsRF.weightedPrecision
+  val recallRF = metricsRF.weightedRecall
+  val f1ScoreRF = metricsRF.weightedFMeasure
+  println("Summary Statistics")
+  println(s"Precision = $precisionRF")
+  println(s"Recall = $recallRF")
+  println(s"F1 Score = $f1ScoreRF")
+
+  println("***************************************")
+
+  /*
+  Multilayer perceptron classifier
+   */
+  println("*********** Multilayer perceptron classifier *******************")
+  val layers = Array[Int](3, 40, 60, 40, 40)
+  val mpc = new MultilayerPerceptronClassifier()
+    .setLayers(layers)
+    .setBlockSize(128)
+    .setSeed(1234L)
+    .setMaxIter(100)
+  val mpcModel = mpc.fit(trainset)
+  val predictionsMPC = mpcModel.transform(testset)
+  val predictionMPCRes = predictionsMPC.select("prediction", "label")
+
+  val evaluatorMPC = new MulticlassClassificationEvaluator()
+    .setMetricName("precision")
+  println("Accuracy:" + evaluator.evaluate(predictionMPCRes))
+
+  val metricsMPC = new MulticlassMetrics(predictionMPCRes.rdd.map{
+    case (Row(p, l)) =>
+      (p.toString.toDouble, l.toString.toDouble)
+  })
+//  println("confusion matrix:")
+//  println(metricsMPC.confusionMatrix)
+  val precisionMPC = metricsMPC.weightedPrecision
+  val recallMPC = metricsMPC.weightedRecall
+  val f1ScoreMPC = metricsMPC.weightedFMeasure
+  println("Summary Statistics")
+  println(s"Precision = $precisionMPC")
+  println(s"Recall = $recallMPC")
+  println(s"F1 Score = $f1ScoreMPC")
+  println("***************************************")
 
   //terminate spark
   sc.stop()
