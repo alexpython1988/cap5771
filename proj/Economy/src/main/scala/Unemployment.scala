@@ -514,6 +514,41 @@ object Unemployment extends JFXApp{
   using 2009, 2014, 2015, 2008 data to predict state
  */
   //TODO each classifier part can be extracted as a function and passing the classifier as input parameters with p, r, f as returned values
+  /*
+ Multilayer perceptron classifier
+  */
+  println("*********** Multilayer perceptron classifier *******************")
+  val layers = Array[Int](3, 40, 80, 40, 40)
+  val mpc = new MultilayerPerceptronClassifier()
+    .setLayers(layers)
+    .setBlockSize(128)
+    .setSeed(1234L)
+    .setMaxIter(100)
+  val mpcModel = mpc.fit(trainset)
+  val predictionsMPC = mpcModel.transform(testset)
+  val predictionMPCRes = predictionsMPC.select("prediction", "label")
+
+  val evaluatorMPC = new MulticlassClassificationEvaluator()
+    .setLabelCol("indexedLabel")
+    .setPredictionCol("prediction")
+    .setMetricName("accuracy")
+  println("Accuracy:" + evaluatorMPC.evaluate(predictionMPCRes))
+
+  val metricsMPC = new MulticlassMetrics(predictionMPCRes.rdd.map{
+    case (Row(p, l)) =>
+      (p.toString.toDouble, l.toString.toDouble)
+  })
+  //  println("confusion matrix:")
+  //  println(metricsMPC.confusionMatrix)
+  val precisionMPC = metricsMPC.weightedPrecision
+  val recallMPC = metricsMPC.weightedRecall
+  val f1ScoreMPC = metricsMPC.weightedFMeasure
+  println("Summary Statistics")
+  println(s"Precision = $precisionMPC")
+  println(s"Recall = $recallMPC")
+  println(s"F1 Score = $f1ScoreMPC")
+  println("***************************************")
+
   println("******* Logistic Regression ***********")
   val logr = new LogisticRegression()
     .setMaxIter(100)
@@ -595,39 +630,6 @@ object Unemployment extends JFXApp{
   println(s"Recall = $recallRF")
   println(s"F1 Score = $f1ScoreRF")
 
-  println("***************************************")
-
-  /*
-  Multilayer perceptron classifier
-   */
-  println("*********** Multilayer perceptron classifier *******************")
-  val layers = Array[Int](3, 40, 60, 40, 40)
-  val mpc = new MultilayerPerceptronClassifier()
-    .setLayers(layers)
-    .setBlockSize(128)
-    .setSeed(1234L)
-    .setMaxIter(100)
-  val mpcModel = mpc.fit(trainset)
-  val predictionsMPC = mpcModel.transform(testset)
-  val predictionMPCRes = predictionsMPC.select("prediction", "label")
-
-  val evaluatorMPC = new MulticlassClassificationEvaluator()
-    .setMetricName("precision")
-  println("Accuracy:" + evaluator.evaluate(predictionMPCRes))
-
-  val metricsMPC = new MulticlassMetrics(predictionMPCRes.rdd.map{
-    case (Row(p, l)) =>
-      (p.toString.toDouble, l.toString.toDouble)
-  })
-//  println("confusion matrix:")
-//  println(metricsMPC.confusionMatrix)
-  val precisionMPC = metricsMPC.weightedPrecision
-  val recallMPC = metricsMPC.weightedRecall
-  val f1ScoreMPC = metricsMPC.weightedFMeasure
-  println("Summary Statistics")
-  println(s"Precision = $precisionMPC")
-  println(s"Recall = $recallMPC")
-  println(s"F1 Score = $f1ScoreMPC")
   println("***************************************")
 
   //terminate spark
