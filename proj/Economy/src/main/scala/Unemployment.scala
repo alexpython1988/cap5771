@@ -177,64 +177,62 @@ object Unemployment extends JFXApp{
   }.cache()
 
 //  city2Code.take(10) foreach println
-  //TODO uncomment back after finish GDP and INCOME process
-  //**********************************************************************************************
+//  **********************************************************************************************
+  val cityLocRate2006 = uRYA2006.join(seriesMap).map{
+    case (k, (rate, (code, text, c))) =>
+      code -> rate
+  }.join(city2Code).map {
+    case (k, (r, c)) => c -> r
+  }.join(cityLoc).map{
+    case (c,(r,(lat, lon))) =>
+      (r, lat, lon)
+  }
 
-//  val cityLocRate2006 = uRYA2006.join(seriesMap).map{
-//    case (k, (rate, (code, text, c))) =>
-//      code -> rate
-//  }.join(city2Code).map {
-//    case (k, (r, c)) => c -> r
-//  }.join(cityLoc).map{
-//    case (c,(r,(lat, lon))) =>
-//      (r, lat, lon)
-//  }
+//  println(cityLocRate2006.count())
 
-////  println(cityLocRate2006.count())
+  val lat1 = cityLocRate2006.map(_._2).collect()
+  val lon1 = cityLocRate2006.map(_._3).collect()
+  val rate = cityLocRate2006.map(_._1).collect()
 
-//  val lat1 = cityLocRate2006.map(_._2).collect()
-//  val lon1 = cityLocRate2006.map(_._3).collect()
-//  val rate = cityLocRate2006.map(_._1).collect()
-//
-//  val cg = ColorGradient(1.5 -> BlueARGB, 4.5 -> GreenARGB, 8.2 -> RedARGB)
-//  val plot = Plot.scatterPlot(lon1, lat1, "", "longtitude", "lattitude", 7, rate.map(cg))
-//
-//  FXRenderer(plot, 800, 600)
-////  FXRenderer.saveToImage(plot, 800, 600, new File("US_Unemployment_Rate_2006.png"))
-//
-//  val cityLocRate2009 = uRYA2009.join(seriesMap).map{
-//    case (k, (rate, (code, text, c))) =>
-//      code -> rate
-//  }.join(city2Code).map {
-//    case (k, (r, c)) => c -> r
-//  }.join(cityLoc).map{
-//    case (c,(r,(lat, lon))) =>
-//      (r, lat, lon)
-//  }
-//
-//  val rate1 = cityLocRate2009.map(_._1).collect()
-//
-//  val plot1 = Plot.scatterPlot(lon1, lat1, "", "longtitude", "lattitude", 7, rate1.map(cg))
-//
-//  FXRenderer(plot1, 800, 600)
-////  FXRenderer.saveToImage(plot1, 800, 600, new File("US_Unemployment_Rate_2009.png"))
-//
-//  val cityLocRate2015 = uRYA2015.join(seriesMap).map{
-//    case (k, (rate, (code, text, c))) =>
-//      code -> rate
-//  }.join(city2Code).map {
-//    case (k, (r, c)) => c -> r
-//  }.join(cityLoc).map{
-//    case (c,(r,(lat, lon))) =>
-//      (r, lat, lon)
-//  }
-//
-//  val rate2 = cityLocRate2015.map(_._1).collect()
-//
-//  val plot2 = Plot.scatterPlot(lon1, lat1, "", "longtitude", "lattitude", 7, rate2.map(cg))
-//
-//  FXRenderer(plot2, 800, 600)
-////  FXRenderer.saveToImage(plot2, 800, 600, new File("US_Unemployment_Rate_2015.png"))
+  val cg = ColorGradient(1.5 -> BlueARGB, 4.5 -> GreenARGB, 8.2 -> RedARGB)
+  val plot = Plot.scatterPlot(lon1, lat1, "", "longtitude", "lattitude", 7, rate.map(cg))
+
+  FXRenderer(plot, 800, 600)
+//  FXRenderer.saveToImage(plot, 800, 600, new File("US_Unemployment_Rate_2006.png"))
+
+  val cityLocRate2009 = uRYA2009.join(seriesMap).map{
+    case (k, (rate, (code, text, c))) =>
+      code -> rate
+  }.join(city2Code).map {
+    case (k, (r, c)) => c -> r
+  }.join(cityLoc).map{
+    case (c,(r,(lat, lon))) =>
+      (r, lat, lon)
+  }
+
+  val rate1 = cityLocRate2009.map(_._1).collect()
+
+  val plot1 = Plot.scatterPlot(lon1, lat1, "", "longtitude", "lattitude", 7, rate1.map(cg))
+
+  FXRenderer(plot1, 800, 600)
+//  FXRenderer.saveToImage(plot1, 800, 600, new File("US_Unemployment_Rate_2009.png"))
+
+  val cityLocRate2015 = uRYA2015.join(seriesMap).map{
+    case (k, (rate, (code, text, c))) =>
+      code -> rate
+  }.join(city2Code).map {
+    case (k, (r, c)) => c -> r
+  }.join(cityLoc).map{
+    case (c,(r,(lat, lon))) =>
+      (r, lat, lon)
+  }
+
+  val rate2 = cityLocRate2015.map(_._1).collect()
+
+  val plot2 = Plot.scatterPlot(lon1, lat1, "", "longtitude", "lattitude", 7, rate2.map(cg))
+
+  FXRenderer(plot2, 800, 600)
+//  FXRenderer.saveToImage(plot2, 800, 600, new File("US_Unemployment_Rate_2015.png"))
   //**********************************************************************************************
 
   //read in GDP data
@@ -322,7 +320,7 @@ object Unemployment extends JFXApp{
   }.cache() //(city, state, pi2009, pi2015, gdp2009, gdp2015, lat, lo )
 //      .take(10) foreach println //((Flagstaff,AZ),(34414.0,38605.0,4643.0,5573.0,35.687109400000004,-111.8158974))
 
-  //TODO uncomment after finish all the code, need to change param index
+  //TODO revise the code to fit for new rdd index
   /*
   *****************************************************************************************************************
     plotting data to represent changes on income and gdp in 2009 and 2015 (total 4 figures)
@@ -371,7 +369,6 @@ object Unemployment extends JFXApp{
       x.sid -> x.title
   }
 
-  //TODO check order of data after join
   val merged060915 = uRYA2008.join(uRYA2009).join(uRYA2014).join(uRYA2015).map{
     case (k, (((d1, d2), d3), d4)) =>
       k -> (d2, d1, d3, d4) //2008, 2009, 2014, 2015
@@ -448,10 +445,10 @@ object Unemployment extends JFXApp{
   println(s"r2: ${trainingSummary.r2}")
   println("************************************")
   //plot data as 2D grid
-//  val X = regressionData.map(_.features(0)).collect
-//  val Y = regressionData.map(_.features(1)).collect
-//  val plot7 = Plot.scatterPlot(X, Y, "", "income", "GDP", 3, BlackARGB)
-////  FXRenderer(plot7, 800, 600)
+  val X = regressionData.map(_.features(0)).collect
+  val Y = regressionData.map(_.features(1)).collect
+  val plot7 = Plot.scatterPlot(X, Y, "", "income", "GDP", 3, BlackARGB)
+  FXRenderer(plot7, 800, 600)
 //  FXRenderer.saveToImage(plot7, 800, 600, new File("GDP_Income_2D.png"))
 
   //prepare dataset for classification
@@ -526,13 +523,15 @@ object Unemployment extends JFXApp{
     .setMaxIter(100)
   val mpcModel = mpc.fit(trainset)
   val predictionsMPC = mpcModel.transform(testset)
-  val predictionMPCRes = predictionsMPC.select("prediction", "label")
 
-  val evaluatorMPC = new MulticlassClassificationEvaluator()
-    .setLabelCol("indexedLabel")
-    .setPredictionCol("prediction")
-    .setMetricName("accuracy")
-  println("Accuracy:" + evaluatorMPC.evaluate(predictionMPCRes))
+//  predictionsMPC.take(10) foreach println
+
+  val predictionMPCRes = predictionsMPC.select("prediction", "label").cache()
+  val md = predictionMPCRes.filter(x => x.get(0) == x.get(1)).count()
+  val totd = predictionMPCRes.count()
+  val acc = md.toDouble / totd.toDouble
+  println("Accuracy: " + acc)
+
 
   val metricsMPC = new MulticlassMetrics(predictionMPCRes.rdd.map{
     case (Row(p, l)) =>
