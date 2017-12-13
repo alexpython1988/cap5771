@@ -390,6 +390,8 @@ object Unemployment extends JFXApp{
       (k1,k2,d1,d2,d3,d4,dd1,dd2,dd3,dd4,dd5,dd6,dd7,dd8,l1,l2)
   }.cache()
 
+  dataForML.toDF("city", "state", "rate08", "rate09", "rate14", "rate15", "pi2008","pi2009", "pi2014", "pi2015", "gdp2008", "gdp2009", "gdp2014", "gdp2015", "lat", "lon").show(10)
+
 //  val data2csv = dataForML.toDF("city", "state", "rate08", "rate09", "rate14", "rate15", "pi2008","pi2009", "pi2014", "pi2015", "gdp2008", "gdp2009", "gdp2014", "gdp2015", "lat", "lon")
   //save data to csv
 //  data2csv
@@ -485,6 +487,8 @@ object Unemployment extends JFXApp{
   }
 
   val classificationDataSet = classificationDataSet2008 ++ classificationDataSet2009 ++ classificationDataSet2014 ++ classificationDataSet2015
+
+
   val classificationDF = classificationDataSet.toDF("label", "features").orderBy(rand()).cache()
 
   val Array(ts, tt) = classificationDF.randomSplit(Array(0.8, 0.2))
